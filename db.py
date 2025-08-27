@@ -273,4 +273,15 @@ def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> None:
     
     try:
         # Update all weekdays in the range
-        result = supabase.table('days').update({'status': 'VACATION'}).eq('user_id', user_id).gte('date', start_d
+        result = supabase.table('days').update({'status': 'VACATION'}).eq('user_id', user_id).gte('date', start_date.isoformat()).lte('date', end_date.isoformat()).execute()
+        
+        # Also ensure days exist for the range (in case they span multiple months)
+        from datetime import timedelta
+        current_date = start_date
+        while current_date <= end_date:
+            if current_date.weekday() < 5:  # Weekday
+                upsert_day(user_id, current_date, {'status': 'VACATION'})
+            current_date += timedelta(days=1)
+            
+    except Exception as e:
+        st.error(f"Error setting vacation range: {e}")
