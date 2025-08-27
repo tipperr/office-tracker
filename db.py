@@ -9,10 +9,20 @@ from typing import Dict, List, Optional, Any
 from supabase import create_client, Client
 import streamlit as st
 
+import os
+import streamlit as st
+
+def get_secret(name: str, default=None):
+    # prefer Streamlit secrets, fallback to env vars
+    try:
+        return st.secrets[name]
+    except Exception:
+        return os.getenv(name, default)
+
 
 def get_supabase_client() -> Client:
     """Initialize and return Supabase client using Streamlit secrets."""
-    url = st.secrets["SUPABASE_URL"]
+    url = st.secrets["SUPABASE_URL"] 
     key = st.secrets["SUPABASE_SERVICE_KEY"]
     return create_client(url, key)
 
@@ -63,9 +73,14 @@ def get_settings(user_id: str = 'rachel') -> Dict[str, Any]:
                 'rounding_mode': 'ceil',
                 'credit_weekdays_json': json.dumps(['TUE', 'WED', 'THU']),
                 'monfri_holiday_treatment': 'neutral',
-                'country': st.secrets.get('DEFAULT_COUNTRY', 'UnitedStates'),
-                'state': st.secrets.get('DEFAULT_STATE', ''),
-                'timezone': st.secrets.get('TIMEZONE', 'America/Los_Angeles')
+                #Not needed for change to Render:
+                #'country': st.secrets.get('DEFAULT_COUNTRY', 'UnitedStates'),
+                #'state': st.secrets.get('DEFAULT_STATE', ''),
+                #'timezone': st.secrets.get('TIMEZONE', 'America/Los_Angeles')
+                #For change to Render:
+                'country':  get_secret('DEFAULT_COUNTRY', 'UnitedStates'),
+                'state':    get_secret('DEFAULT_STATE', ''),
+                'timezone': get_secret('TIMEZONE', 'America/Los_Angeles')
             }
             
             result = supabase.table('settings').insert(default_settings).execute()
@@ -258,15 +273,4 @@ def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> None:
     
     try:
         # Update all weekdays in the range
-        result = supabase.table('days').update({'status': 'VACATION'}).eq('user_id', user_id).gte('date', start_date.isoformat()).lte('date', end_date.isoformat()).execute()
-        
-        # Also ensure days exist for the range (in case they span multiple months)
-        from datetime import timedelta
-        current_date = start_date
-        while current_date <= end_date:
-            if current_date.weekday() < 5:  # Weekday
-                upsert_day(user_id, current_date, {'status': 'VACATION'})
-            current_date += timedelta(days=1)
-            
-    except Exception as e:
-        st.error(f"Error setting vacation range: {e}")
+        result = supabase.table('days').update({'status': 'VACATION'}).eq('user_id', user_id).gte('date', start_d
