@@ -22,8 +22,12 @@ def get_secret(name: str, default=None):
 
 def get_supabase_client() -> Client:
     """Initialize and return Supabase client using Streamlit secrets."""
-    url = st.secrets["SUPABASE_URL"] 
-    key = st.secrets["SUPABASE_SERVICE_KEY"]
+    '''url = st.secrets["SUPABASE_URL"] 
+    key = st.secrets["SUPABASE_SERVICE_KEY"]'''
+    url = get_secret("SUPABASE_URL")
+    key = get_secret("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        raise RuntimeError("Missing SUPABASE_URL / SUPABASE_SERVICE_KEY.")
     return create_client(url, key)
 
 
@@ -260,7 +264,7 @@ def upsert_day(user_id: str, day_date: date, fields: Dict[str, Any]) -> None:
         st.error(f"Error updating day: {e}")
 
 
-def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> None:
+#def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> None:
     """
     Set status to VACATION for a date range (weekdays only).
     
@@ -268,6 +272,7 @@ def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> None:
         user_id: User identifier
         start_date: Start date (inclusive)
         end_date: End date (inclusive)
+    """
     """
     supabase = get_supabase_client()
     
@@ -285,3 +290,28 @@ def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> None:
             
     except Exception as e:
         st.error(f"Error setting vacation range: {e}")
+"""
+
+def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> int:
+    """
+    Set status = 'VACATION' for all days in [start_date, end_date] inclusive.
+    Returns number of rows affected (best-effort).
+    """
+    supabase = get_supabase_client()
+    try:
+        result = (
+            supabase
+            .table('days')
+            .update({'status': 'VACATION'})
+            .eq('user_id', user_id)
+            .gte('date', start_date.isoformat())
+            .lte('date', end_date.isoformat())
+            .execute()
+        )
+        # Supabase may not return affected row count reliably; fall back to 0/len
+        return len(result.data) if getattr(result, "data", None) else 0
+    except Exception as e:
+        # Streamlit-safe error; don't crash the app
+        import streamlit as st
+        st.error(f"Error setting vacation range: {e}")
+        return 0
