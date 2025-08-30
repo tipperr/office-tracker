@@ -471,7 +471,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("🏢 Office Tracker")
+    st.title("🏢 Desk-O-Meter")
     
     # Load data
     settings, days, summary = load_month_data()
