@@ -84,14 +84,13 @@ def compute_summary(days: List[Dict[str, Any]], settings: Dict[str, Any]) -> Dic
     credited_holidays = 0
     
     for day in days:
+        status = day.get('status', 'NONE')
+        status_counts[status] = status_counts.get(status, 0) + 1
+        
         if day['date'].weekday() < 5:  # Weekday
             workdays += 1
             
-            # Count status occurrences
-            status = day.get('status', 'NONE')
-            status_counts[status] = status_counts.get(status, 0) + 1
-            
-            # Calculate daily credit using OR logic
+            # Calculate daily credit using OR logic for weekdays
             daily_credit = 0
             
             # Source 1: Status counts as office
@@ -105,8 +104,13 @@ def compute_summary(days: List[Dict[str, Any]], settings: Dict[str, Any]) -> Dic
                     credited_holidays += 1
             
             numerator += daily_credit
+        
+        else:  # Weekend
+            # For weekends: only count office-like statuses, no holiday credit
+            if status in COUNTS_AS_OFFICE:
+                numerator += 1
     
-    # Denominator is total workdays (no vacation subtraction)
+    # Denominator is total workdays only (Mon-Fri)
     denominator = workdays
     
     # Calculate required days using specified rounding

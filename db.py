@@ -138,6 +138,7 @@ def upsert_settings(user_id: str, fields: Dict[str, Any]) -> None:
 def get_month_days(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
     """
     Get all days for a specific month, auto-seeding if empty.
+    Includes lazy backfill for missing weekend dates.
     
     Args:
         user_id: User identifier
@@ -163,6 +164,44 @@ def get_month_days(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
             # Convert date strings back to date objects
             for day in result.data:
                 day['date'] = datetime.fromisoformat(day['date']).date()
+            
+            # Check for missing weekend dates and backfill if needed
+            existing_dates = {day['date'] for day in result.data}
+            missing_dates = []
+            
+            from calc import month_grid
+            import holidays
+            
+            # Get all calendar dates for the month
+            grid = month_grid(year, month)
+            settings = get_settings(user_id)
+            country_holidays = holidays.country_holidays(settings['country'], state=settings.get('state'))
+            
+            for week in grid:
+                for day_date in week:
+                    if day_date and day_date not in existing_dates:
+                        # Missing date - create record
+                        is_holiday = day_date in country_holidays
+                        holiday_name = country_holidays.get(day_date, '') if is_holiday else ''
+                        
+                        missing_record = {
+                            'user_id': user_id,
+                            'date': day_date.isoformat(),
+                            'status': 'NONE',
+                            'is_holiday': is_holiday,
+                            'holiday_name': holiday_name,
+                            'notes': ''
+                        }
+                        missing_dates.append(missing_record)
+            
+            # Insert missing dates if any
+            if missing_dates:
+                insert_result = supabase.table('days').insert(missing_dates).execute()
+                # Add to result data
+                for day in insert_result.data:
+                    day['date'] = datetime.fromisoformat(day['date']).date()
+                    result.data.append(day)
+            
             return result.data
         else:
             # Auto-seed the month
@@ -175,8 +214,9 @@ def get_month_days(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
 
 def _seed_month(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
     """
-    Seed a month with default day records (weekdays only).
+    Seed a month with default day records (all calendar days Mon-Sun).
     For user_id='rachel', preset Mon/Fri → WFH, Tue/Wed/Thu → IN_OFFICE.
+    Weekends default to NONE.
     
     Args:
         user_id: User identifier
@@ -201,13 +241,13 @@ def _seed_month(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
     
     for week in grid:
         for day_date in week:
-            if day_date and day_date.weekday() < 5:  # Monday=0, Friday=4
+            if day_date:  # Include all calendar days (Mon-Sun)
                 is_holiday = day_date in country_holidays
                 holiday_name = country_holidays.get(day_date, '') if is_holiday else ''
                 
                 # Set default status based on weekday for user_id='rachel'
                 default_status = 'NONE'
-                if user_id == 'rachel':
+                if user_id == 'rachel' and day_date.weekday() < 5:  # Only set defaults for weekdays
                     weekday = day_date.weekday()  # Monday=0, Friday=4
                     if weekday in [0, 4]:  # Mon/Fri
                         default_status = 'WFH'

@@ -130,12 +130,95 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
     day_num = day_date.day
     
     if is_weekend:
-        # Weekend cell - greyed out with just day number
-        st.markdown(f"""
-        <div class="weekend-cell">
-            <div class="day-number">{day_num}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Weekend cell - interactive but slightly muted
+        if day_data:
+            status = day_data.get('status', 'NONE')
+            is_holiday = day_data.get('is_holiday', False)
+            holiday_name = day_data.get('holiday_name', '')
+            
+            # Get status class and emoji
+            status_class = status_to_class(status)
+            status_emoji = calc.get_status_emoji(status)
+            
+            # Holiday badge
+            holiday_badge = ""
+            if is_holiday:
+                holiday_display = holiday_name[:10] if holiday_name else 'Holiday'
+                holiday_badge = f'<div class="holiday-badge">🎉 {holiday_display}</div>'
+            
+            # Render weekend cell with status class and slight opacity
+            st.markdown(f"""
+            <div class="weekend-cell {status_class}">
+                <div class="day-number">{day_num}</div>
+                <div class="weekend-label">Weekend</div>
+                <div class="status-emoji">{status_emoji}</div>
+                {holiday_badge}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Status selector for weekends
+            status_options = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
+            status_labels = {
+                'NONE': '—',
+                'WFH': 'WFH',
+                'IN_OFFICE': 'Office',
+                'VACATION': 'Vacation',
+                'BIOHUB': 'Biohub',
+                'TRAINING': 'Training',
+                'OTHER_HOLIDAY': 'Other Hol'
+            }
+            
+            current_index = status_options.index(status) if status in status_options else 0
+            
+            new_status = st.selectbox(
+                "",
+                options=status_options,
+                format_func=lambda x: status_labels.get(x, x),
+                index=current_index,
+                key=f"status_{day_date.isoformat()}",
+                label_visibility="collapsed"
+            )
+            
+            # Update status if changed
+            if new_status != status:
+                db.upsert_day(st.session_state.user_id, day_date, {'status': new_status})
+                st.rerun()
+        
+        else:
+            # No data - empty weekend cell
+            status_class = status_to_class('NONE')
+            st.markdown(f"""
+            <div class="weekend-cell {status_class}">
+                <div class="day-number">{day_num}</div>
+                <div class="weekend-label">Weekend</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Still provide a selector for empty weekend cells
+            status_options = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
+            status_labels = {
+                'NONE': '—',
+                'WFH': 'WFH',
+                'IN_OFFICE': 'Office',
+                'VACATION': 'Vacation',
+                'BIOHUB': 'Biohub',
+                'TRAINING': 'Training',
+                'OTHER_HOLIDAY': 'Other Hol'
+            }
+            
+            new_status = st.selectbox(
+                "",
+                options=status_options,
+                format_func=lambda x: status_labels.get(x, x),
+                index=0,  # Default to NONE
+                key=f"status_{day_date.isoformat()}",
+                label_visibility="collapsed"
+            )
+            
+            # Create day record if status changed from NONE
+            if new_status != 'NONE':
+                db.upsert_day(st.session_state.user_id, day_date, {'status': new_status})
+                st.rerun()
         return
     
     # Weekday cell
@@ -252,6 +335,9 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     progress_value = min(achieved_percent / required_percent, 1.0) if required_percent > 0 else 0
     st.sidebar.progress(progress_value)
     st.sidebar.markdown(f"**Achievement:** {achieved_percent:.1f}% of {required_percent:.0f}% required")
+    
+    # Weekend behavior helper text
+    st.sidebar.caption("💡 Weekends don't increase the denominator; marking an office status on a weekend does add credit.")
     
     # Show breakdown of credits
     st.sidebar.markdown("---")
@@ -467,6 +553,14 @@ def main():
         left: 5px;
         right: 5px;
         font-weight: 500;
+    }
+    
+    .weekend-label {
+        font-size: 10px;
+        color: #666;
+        margin-top: 15px;
+        font-weight: 500;
+        opacity: 0.7;
     }
     </style>
     """, unsafe_allow_html=True)
