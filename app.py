@@ -18,7 +18,7 @@ import calc
 
 # Page configuration
 st.set_page_config(
-    page_title="Office Tracker",
+    page_title="Desk-O-Meter",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded"
