@@ -54,9 +54,9 @@ def load_month_data():
         db.init_schema_if_needed()
         
         # Get settings and days
-        settings = db.get_settings(st.session_state.user_id)
+        settings = db.get_settings()
         days = db.get_month_days(
-            st.session_state.user_id,
+            None,
             st.session_state.current_year,
             st.session_state.current_month
         )
@@ -181,7 +181,7 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
             
             # Update status if changed
             if new_status != status:
-                db.upsert_day(st.session_state.user_id, day_date, {'status': new_status})
+                db.upsert_day(None, day_date, {'status': new_status})
                 st.rerun()
         
         else:
@@ -217,7 +217,7 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
             
             # Create day record if status changed from NONE
             if new_status != 'NONE':
-                db.upsert_day(st.session_state.user_id, day_date, {'status': new_status})
+                db.upsert_day(None, day_date, {'status': new_status})
                 st.rerun()
         return
     
@@ -271,7 +271,7 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
         
         # Update status if changed
         if new_status != status:
-            db.upsert_day(st.session_state.user_id, day_date, {'status': new_status})
+            db.upsert_day(None, day_date, {'status': new_status})
             st.rerun()
     
     else:
@@ -306,7 +306,7 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
         
         # Create day record if status changed from NONE
         if new_status != 'NONE':
-            db.upsert_day(st.session_state.user_id, day_date, {'status': new_status})
+            db.upsert_day(None, day_date, {'status': new_status})
             st.rerun()
 
 
@@ -398,7 +398,7 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     )
     
     if settings_changed:
-        db.upsert_settings(st.session_state.user_id, {
+        db.upsert_settings(db.get_current_user_id(), {
             'required_percent': new_required_percent,
             'rounding_mode': new_rounding_mode,
             'monfri_holiday_treatment': new_monfri_treatment,
@@ -418,7 +418,7 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     
     if st.sidebar.button("Set Vacation Range"):
         if calc.validate_date_range(start_date, end_date):
-            db.bulk_set_vacation(st.session_state.user_id, start_date, end_date)
+            db.bulk_set_vacation(None, start_date, end_date)
             st.sidebar.success(f"Set vacation from {start_date} to {end_date}")
             st.rerun()
         else:
@@ -456,7 +456,7 @@ def render_export_import(days: List[Dict[str, Any]], settings: Dict[str, Any], s
                     # Import the data (overwrite current month)
                     for day_data in imported_data['days']:
                         db.upsert_day(
-                            st.session_state.user_id,
+                            None,
                             day_data['date'],
                             {
                                 'status': day_data['status'],

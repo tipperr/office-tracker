@@ -20,6 +20,17 @@ def get_secret(name: str, default=None):
         return os.getenv(name, default)
 
 
+def get_current_user_id() -> str:
+    uid = st.session_state.get("uid")
+    if uid:
+        return uid
+    # fallback for pre-auth usage
+    val = get_secret("DEFAULT_USER_ID")
+    if not val:
+        raise RuntimeError("DEFAULT_USER_ID missing; set it in secrets/env.")
+    return val
+
+
 def get_supabase_client() -> Client:
     """Initialize and return Supabase client using Streamlit secrets."""
     '''url = st.secrets["SUPABASE_URL"] 
@@ -49,16 +60,19 @@ def init_schema_if_needed() -> None:
         # TODO: Implement automatic table creation via RPC if needed
 
 
-def get_settings(user_id: str = 'rachel') -> Dict[str, Any]:
+def get_settings(user_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Get user settings, creating default if none exist.
     
     Args:
-        user_id: User identifier (defaults to 'rachel' for v1)
+        user_id: User identifier (defaults to current user)
         
     Returns:
         Dictionary containing user settings
     """
+    if user_id is None:
+        user_id = get_current_user_id()
+    
     supabase = get_supabase_client()
     
     try:
@@ -135,19 +149,22 @@ def upsert_settings(user_id: str, fields: Dict[str, Any]) -> None:
         st.error(f"Error updating settings: {e}")
 
 
-def get_month_days(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
+def get_month_days(user_id: Optional[str], year: int, month: int) -> List[Dict[str, Any]]:
     """
     Get all days for a specific month, auto-seeding if empty.
     Includes lazy backfill for missing weekend dates.
     
     Args:
-        user_id: User identifier
+        user_id: User identifier (defaults to current user)
         year: Year (e.g., 2024)
         month: Month (1-12)
         
     Returns:
         List of day records for the month
     """
+    if user_id is None:
+        user_id = get_current_user_id()
+    
     supabase = get_supabase_client()
     
     try:
@@ -277,15 +294,18 @@ def _seed_month(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
         return []
 
 
-def upsert_day(user_id: str, day_date: date, fields: Dict[str, Any]) -> None:
+def upsert_day(user_id: Optional[str], day_date: date, fields: Dict[str, Any]) -> None:
     """
     Update or insert a day record.
     
     Args:
-        user_id: User identifier
+        user_id: User identifier (defaults to current user)
         day_date: Date of the day
         fields: Fields to update
     """
+    if user_id is None:
+        user_id = get_current_user_id()
+    
     supabase = get_supabase_client()
     
     try:
@@ -332,11 +352,14 @@ def upsert_day(user_id: str, day_date: date, fields: Dict[str, Any]) -> None:
         st.error(f"Error setting vacation range: {e}")
 """
 
-def bulk_set_vacation(user_id: str, start_date: date, end_date: date) -> int:
+def bulk_set_vacation(user_id: Optional[str], start_date: date, end_date: date) -> int:
     """
     Set status = 'VACATION' for all days in [start_date, end_date] inclusive.
     Returns number of rows affected (best-effort).
     """
+    if user_id is None:
+        user_id = get_current_user_id()
+    
     supabase = get_supabase_client()
     try:
         result = (
