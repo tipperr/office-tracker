@@ -12,6 +12,36 @@ import calendar
 # Import our modules
 import db
 import calc
+from supabase import create_client
+
+def get_auth_client():
+    url = db.get_secret("SUPABASE_URL")
+    anon = db.get_secret("SUPABASE_ANON_KEY")
+    if not url or not anon:
+        st.error("Supabase URL / ANON key missing.")
+        st.stop()
+    return create_client(url, anon)
+
+def render_login():
+    st.title("Sign in")
+    with st.form("login"):
+        email = st.text_input("Email", value="", autocomplete="username")
+        password = st.text_input("Password", type="password", autocomplete="current-password")
+        submitted = st.form_submit_button("Sign in")
+    if submitted:
+        sb = get_auth_client()
+        try:
+            res = sb.auth.sign_in_with_password({"email": email, "password": password})
+            st.session_state["uid"] = res.user.id
+            # Optionally keep tokens for later; not required for this step
+            st.session_state["sb_session"] = {
+                "access_token": res.session.access_token,
+                "refresh_token": res.session.refresh_token,
+            }
+            st.success("Signed in")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Login failed: {e}")
 
 # TODO(auth): Switch to Supabase Auth, enable RLS, add user_id from auth context
 # TODO(device): Expose /api/month?year=YYYY&month=MM via FastAPI for ESP32 clients
@@ -36,6 +66,11 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
+
+# Gate the app UI behind login
+if "uid" not in st.session_state:
+    render_login()
+    st.stop()
 
 # Initialize session state
 if 'current_year' not in st.session_state:
@@ -312,6 +347,16 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
 
 def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     """Render the sidebar with summary and controls."""
+    # Sign out button
+    with st.sidebar:
+        if st.button("Sign out"):
+            try:
+                get_auth_client().auth.sign_out()
+            except Exception:
+                pass
+            st.session_state.clear()
+            st.rerun()
+    
     st.sidebar.header("📊 Summary")
     
     # 1. Required Days (big number)
