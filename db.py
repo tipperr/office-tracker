@@ -33,14 +33,13 @@ def get_current_user_id() -> str:
 
 def get_supabase_client() -> Client:
     """Return the authenticated session client or fallback to anon client."""
+    # Prefer the authed anon client stored at login
     sb = st.session_state.get("sb_client")
     if sb:
         return sb
-    # fallback: anon client without a session (will be denied once RLS is on)
+    # Fallback: anon client without a user session
     url = get_secret("SUPABASE_URL")
     anon = get_secret("SUPABASE_ANON_KEY")
-    if not url or not anon:
-        raise RuntimeError("Missing SUPABASE_URL / SUPABASE_ANON_KEY.")
     return create_client(url, anon)
 
 

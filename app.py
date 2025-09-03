@@ -22,8 +22,21 @@ def get_auth_client():
         st.stop()
     return create_client(url, anon)
 
+def _display_name() -> str:
+    if "display_name" in st.session_state and st.session_state["display_name"]:
+        return str(st.session_state["display_name"])
+    e = st.session_state.get("email") or ""
+    return (e.split("@")[0].title() if e else "there")
+
 def render_login():
     st.title("Sign in")
+    st.markdown("Track in-office requirements (60% of weekdays), holidays, and weekend credits.")
+    with st.expander("What is this?", expanded=False):
+        st.markdown(
+            "- **Counts:** Tue–Thu holidays and any day you mark as Office/Biohub/Training/Vacation count toward your 60%.\n"
+            "- **Weekends:** Don't increase the denominator, but **do** add credit if marked as Office-like.\n"
+            "- **Privacy:** With RLS enabled, you only see your own data.\n"
+        )
     with st.form("login"):
         email = st.text_input("Email", value="", autocomplete="username")
         password = st.text_input("Password", type="password", autocomplete="current-password")
@@ -32,8 +45,22 @@ def render_login():
         sb = get_auth_client()
         try:
             res = sb.auth.sign_in_with_password({"email": email, "password": password})
+            # Persist identity for this session
             st.session_state["uid"] = res.user.id
-            st.session_state["sb_client"] = sb  # keep the authed anon client
+            st.session_state["sb_client"] = sb
+            # Store display info for greeting
+            try:
+                user_email = getattr(res.user, "email", None)
+                user_name = None
+                meta = getattr(res.user, "user_metadata", None) or {}
+                if isinstance(meta, dict):
+                    user_name = meta.get("full_name") or meta.get("name")
+                if user_email and not user_name:
+                    user_name = user_email.split("@")[0]
+                if user_email:  st.session_state["email"] = user_email
+                if user_name:   st.session_state["display_name"] = user_name
+            except Exception:
+                pass
             st.success("Signed in")
             st.rerun()
         except Exception as e:
@@ -67,6 +94,10 @@ st.markdown("""
 if "uid" not in st.session_state:
     render_login()
     st.stop()
+
+# Show greeting for authenticated user
+st.markdown(f"### Hi, {_display_name()} 👋")
+st.caption("You're signed in. Your data is private to your account.")
 
 # Initialize session state
 if 'current_year' not in st.session_state:
