@@ -33,11 +33,7 @@ def render_login():
         try:
             res = sb.auth.sign_in_with_password({"email": email, "password": password})
             st.session_state["uid"] = res.user.id
-            # Optionally keep tokens for later; not required for this step
-            st.session_state["sb_session"] = {
-                "access_token": res.session.access_token,
-                "refresh_token": res.session.refresh_token,
-            }
+            st.session_state["sb_client"] = sb  # keep the authed anon client
             st.success("Signed in")
             st.rerun()
         except Exception as e:
@@ -354,6 +350,7 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
                 get_auth_client().auth.sign_out()
             except Exception:
                 pass
+            st.session_state.pop("sb_client", None)
             st.session_state.clear()
             st.rerun()
     

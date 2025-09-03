@@ -32,14 +32,16 @@ def get_current_user_id() -> str:
 
 
 def get_supabase_client() -> Client:
-    """Initialize and return Supabase client using Streamlit secrets."""
-    '''url = st.secrets["SUPABASE_URL"] 
-    key = st.secrets["SUPABASE_SERVICE_KEY"]'''
+    """Return the authenticated session client or fallback to anon client."""
+    sb = st.session_state.get("sb_client")
+    if sb:
+        return sb
+    # fallback: anon client without a session (will be denied once RLS is on)
     url = get_secret("SUPABASE_URL")
-    key = get_secret("SUPABASE_SERVICE_KEY")
-    if not url or not key:
-        raise RuntimeError("Missing SUPABASE_URL / SUPABASE_SERVICE_KEY.")
-    return create_client(url, key)
+    anon = get_secret("SUPABASE_ANON_KEY")
+    if not url or not anon:
+        raise RuntimeError("Missing SUPABASE_URL / SUPABASE_ANON_KEY.")
+    return create_client(url, anon)
 
 
 def init_schema_if_needed() -> None:
