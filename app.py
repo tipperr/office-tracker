@@ -101,8 +101,11 @@ st.markdown("""
   text-shadow:0 1px 2px rgba(0,0,0,.6);
   z-index: 2;                   /* sits above widgets */
 }
+.weekday-label { font-size: 0.85rem; opacity: .75; margin-bottom: .25rem; }
 </style>
 """, unsafe_allow_html=True)
+
+WEEKDAY_ABBR = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 
 # Gate the app UI behind login
 if "uid" not in st.session_state:
@@ -158,6 +161,31 @@ def load_month_data():
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None, [], {}
+
+
+def render_week(week_dates, days_by_iso, settings, visible_year, visible_month):
+    """Render a single week in 2-row grid: Mon-Thu, then Fri-Sun."""
+    # Row 1: Mon..Thu with weekday labels
+    cols = st.columns(4, gap="small")
+    for i, d in enumerate(week_dates[:4]):
+        with cols[i]:
+            # Display weekday label
+            st.markdown(f'<div class="weekday-label">{WEEKDAY_ABBR[i]}</div>', unsafe_allow_html=True)
+            # Look up record by ISO date string
+            iso_key = d.isoformat()
+            rec = days_by_iso.get(iso_key)
+            render_day_cell(d, rec, settings)
+
+    # Row 2: Fri..Sun with weekday labels
+    cols = st.columns(3, gap="small")
+    for i, d in enumerate(week_dates[4:]):
+        with cols[i]:
+            # Display weekday label (Fri=4, Sat=5, Sun=6)
+            st.markdown(f'<div class="weekday-label">{WEEKDAY_ABBR[i + 4]}</div>', unsafe_allow_html=True)
+            # Look up record by ISO date string
+            iso_key = d.isoformat()
+            rec = days_by_iso.get(iso_key)
+            render_day_cell(d, rec, settings)
 
 
 def render_calendar(days: List[Dict[str, Any]], settings: Dict[str, Any]):
@@ -675,14 +703,58 @@ def main():
         st.error("Failed to load application data. Please check your Supabase configuration.")
         st.stop()
     
+    # Map "YYYY-MM-DD" -> row (avoid date-object mismatches)
+    days_by_iso = {}
+    for r in days:
+        # Handle PostgREST returning str or date
+        raw = r.get("date")
+        iso = None
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            # normalize "YYYY-MM-DD..." to first 10 chars
+            iso = raw[:10]
+        else:
+            # datetime.date/datetime
+            try:
+                iso = raw.isoformat()[:10]
+            except Exception:
+                continue
+        days_by_iso[iso] = r
+
+    # Sidebar toggle to switch on week view
+    with st.sidebar:
+        st.checkbox("📱 Week view (mobile)", key="mobile_week_view",
+                    help="Shows one week at a time with correct weekday alignment.")
+    
     # Render sidebar
     updated_settings = render_sidebar(settings, summary)
     
     # Render export/import
     render_export_import(days, updated_settings, summary)
     
-    # Main calendar view
-    render_calendar(days, updated_settings)
+    # Main calendar view - branch between week and month view
+    if st.session_state.get("mobile_week_view", False):
+        total_weeks = len(weeks)
+        wk = int(st.session_state.get("week_idx", 0))
+        wk = max(0, min(wk, total_weeks - 1))
+
+        nav_l, nav_c, nav_r = st.columns([1, 3, 1])
+        with nav_l:
+            if st.button("◀ Prev week", use_container_width=True, key=f"wk-prev-{ym_key}-{wk}"):
+                st.session_state["week_idx"] = max(0, wk - 1)
+                st.rerun()
+        with nav_c:
+            st.markdown(f"#### Week {wk + 1} of {total_weeks}")
+        with nav_r:
+            if st.button("Next week ▶", use_container_width=True, key=f"wk-next-{ym_key}-{wk}"):
+                st.session_state["week_idx"] = min(total_weeks - 1, wk + 1)
+                st.rerun()
+
+        render_week(weeks[wk], days_by_iso, updated_settings, year, month)
+    else:
+        # Existing month view call stays as-is:
+        render_calendar(days, updated_settings)
     
     # Footer with instructions
     st.markdown("---")
