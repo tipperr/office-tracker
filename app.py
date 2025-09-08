@@ -14,6 +14,20 @@ import db
 import calc
 from supabase import create_client
 
+def build_weeks(year: int, month: int):
+    """Return list of weeks; each is a list of 7 datetime.date (Mon..Sun).
+    Includes spillover days so weekday alignment is preserved."""
+    cal = calendar.Calendar(firstweekday=0)  # 0 = Monday
+    return [list(week) for week in cal.monthdatescalendar(year, month)]
+
+def initial_week_index(weeks, today=None) -> int:
+    if today is None:
+        today = date.today()
+    for i, wk in enumerate(weeks):
+        if today in wk:
+            return i
+    return 0
+
 def get_auth_client():
     url = db.get_secret("SUPABASE_URL")
     anon = db.get_secret("SUPABASE_ANON_KEY")
@@ -107,6 +121,20 @@ if 'current_year' not in st.session_state:
 
 if 'user_id' not in st.session_state:
     st.session_state.user_id = 'rachel'  # Default user for v1
+
+# Compute weeks for the visible month
+year = st.session_state.current_year
+month = st.session_state.current_month
+weeks = build_weeks(year, month)
+ym_key = f"{year}-{month:02d}"
+
+# Reset week index when the month changes
+if st.session_state.get("ym_key") != ym_key:
+    st.session_state["ym_key"] = ym_key
+    st.session_state["week_idx"] = initial_week_index(weeks)
+
+# Toggle we can use later to switch views (kept False by default)
+st.session_state.setdefault("mobile_week_view", False)
 
 
 def load_month_data():
