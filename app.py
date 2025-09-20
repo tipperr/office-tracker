@@ -485,6 +485,30 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Configuration")
     
+    # Location section
+    st.sidebar.markdown("### Location")
+    US_STATES = ["— None —","AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID",
+                 "IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT",
+                 "NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+                 "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"]
+    
+    current_state = settings.get("state") or None
+    # compute index
+    idx = 0
+    if current_state and current_state in US_STATES:
+        idx = US_STATES.index(current_state)
+    state_choice = st.sidebar.selectbox("US State (optional)", US_STATES, index=idx, key="state_sel")
+    chosen_state = None if state_choice == "— None —" else state_choice
+    if st.sidebar.button("Save state", use_container_width=True):
+        try:
+            db.update_settings_state(st.session_state["uid"], chosen_state)
+            st.sidebar.success("State saved.")
+            # refresh by rerunning
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Failed to save state: {e}")
+    st.sidebar.caption("If set, state-specific holidays are included. Leave as None to use federal holidays only.")
+    
     # Required percentage
     new_required_percent = st.sidebar.slider(
         "Required %",

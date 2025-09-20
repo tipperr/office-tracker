@@ -83,6 +83,11 @@ def get_settings(user_id: Optional[str] = None) -> Dict[str, Any]:
             settings = result.data[0]
             # Parse JSON field
             settings['credit_weekdays'] = json.loads(settings['credit_weekdays_json'])
+            # normalize blanks
+            if not settings.get("state"):
+                settings["state"] = None
+            if not settings.get("country"):
+                settings["country"] = "US"
             return settings
         else:
             # Create default settings
@@ -92,13 +97,8 @@ def get_settings(user_id: Optional[str] = None) -> Dict[str, Any]:
                 'rounding_mode': 'ceil',
                 'credit_weekdays_json': json.dumps(['TUE', 'WED', 'THU']),
                 'monfri_holiday_treatment': 'neutral',
-                #Not needed for change to Render:
-                #'country': st.secrets.get('DEFAULT_COUNTRY', 'UnitedStates'),
-                #'state': st.secrets.get('DEFAULT_STATE', ''),
-                #'timezone': st.secrets.get('TIMEZONE', 'America/Los_Angeles')
-                #For change to Render:
-                'country':  get_secret('DEFAULT_COUNTRY', 'UnitedStates'),
-                'state':    get_secret('DEFAULT_STATE', ''),
+                'country': get_secret('DEFAULT_COUNTRY', 'US'),
+                'state': (get_secret('DEFAULT_STATE', None) or None),  # <-- None not ''
                 'timezone': get_secret('TIMEZONE', 'America/Los_Angeles')
             }
             
@@ -150,6 +150,15 @@ def upsert_settings(user_id: str, fields: Dict[str, Any]) -> None:
         st.error(f"Error updating settings: {e}")
 
 
+def update_settings_state(user_id: str, state: Optional[str]) -> None:
+    """Update just the state setting for a user."""
+    supabase = get_supabase_client()
+    try:
+        supabase.table("settings").update({"state": state}).eq("user_id", user_id).execute()
+    except Exception as e:
+        st.error(f"Error updating state: {e}")
+
+
 def get_month_days(user_id: Optional[str], year: int, month: int) -> List[Dict[str, Any]]:
     """
     Get all days for a specific month, auto-seeding if empty.
@@ -187,13 +196,12 @@ def get_month_days(user_id: Optional[str], year: int, month: int) -> List[Dict[s
             existing_dates = {day['date'] for day in result.data}
             missing_dates = []
             
-            from calc import month_grid
-            import holidays
+            from calc import month_grid, build_holidays
             
             # Get all calendar dates for the month
             grid = month_grid(year, month)
             settings = get_settings(user_id)
-            country_holidays = holidays.country_holidays(settings['country'], state=settings.get('state'))
+            country_holidays = build_holidays(year, settings.get('country'), settings.get('state'))
             
             for week in grid:
                 for day_date in week:
@@ -244,14 +252,13 @@ def _seed_month(user_id: str, year: int, month: int) -> List[Dict[str, Any]]:
     Returns:
         List of created day records
     """
-    from calc import month_grid, credited_holiday
-    import holidays
+    from calc import month_grid, credited_holiday, build_holidays
     
     supabase = get_supabase_client()
     settings = get_settings(user_id)
     
     # Get holidays for the year
-    country_holidays = holidays.country_holidays(settings['country'], state=settings.get('state'))
+    country_holidays = build_holidays(year, settings.get('country'), settings.get('state'))
     
     # Generate all days in the month
     grid = month_grid(year, month)

@@ -11,6 +11,30 @@ import holidays
 from decimal import Decimal, ROUND_HALF_UP
 
 
+def _normalize_country(country: str | None) -> str:
+    """Normalize country code to standard format."""
+    if not country:
+        return "US"
+    aliases = {"UnitedStates": "US", "USA": "US", "US": "US"}
+    return aliases.get(str(country), str(country))
+
+
+def build_holidays(year: int, country: str | None, state: str | None):
+    """
+    Returns a holidays object for the year.
+    Only passes subdiv when state is truthy; treats '' as None.
+    """
+    c = _normalize_country(country)
+    subdiv = state or None  # '' -> None
+    try:
+        if subdiv:
+            return holidays.country_holidays(c, years=year, subdiv=subdiv)
+        return holidays.country_holidays(c, years=year)
+    except Exception:
+        # Fallback if state code is invalid: ignore subdiv
+        return holidays.country_holidays(c, years=year)
+
+
 def month_grid(year: int, month: int) -> List[List[Optional[date]]]:
     """
     Generate a calendar grid for the given month.
