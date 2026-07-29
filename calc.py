@@ -86,55 +86,66 @@ def credited_holiday(holiday_date: date, settings: Dict[str, Any]) -> bool:
     return False
 
 
-# Define statuses that count as office attendance
-COUNTS_AS_OFFICE = {"IN_OFFICE", "VACATION", "BIOHUB", "TRAINING", "OTHER_HOLIDAY"}
+# Work-mode categories used by the monthly formula. The older, more specific
+# BIOHUB and TRAINING statuses remain valid offsite-work entries.
+IN_PERSON_WORK_STATUSES = {"IN_OFFICE", "OFFSITE_WORK", "BIOHUB", "TRAINING"}
+PTO_STATUSES = {"VACATION", "SICK", "VOLUNTEER"}
+COMPANY_HOLIDAY_STATUSES = {"COMPANY_HOLIDAY", "OTHER_HOLIDAY"}
 
 
 def compute_summary(days: List[Dict[str, Any]], settings: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Compute the monthly summary statistics.
+    Compute monthly work-mode statistics.
+
+    In-person work percentage =
+        (in-person/offsite work days + PTO days + company holidays)
+        / weekdays in the month
+
+    A date can contribute at most one credit. This prevents a PTO day that also
+    falls on a company holiday from being counted twice.
     
     Args:
         days: List of day records for the month
         settings: User settings dictionary
         
     Returns:
-        Dictionary with workdays, denominator, numerator, required_days, balance, percent_achieved
+        Dictionary with the formula inputs and requirement progress.
     """
-    # Count different types of days
-    workdays = 0
-    numerator = 0
+    if days:
+        month_date = days[0]['date']
+        _, days_in_month = calendar.monthrange(month_date.year, month_date.month)
+        workdays = sum(
+            1
+            for day_number in range(1, days_in_month + 1)
+            if date(month_date.year, month_date.month, day_number).weekday() < 5
+        )
+    else:
+        workdays = 0
+
     status_counts = {}
-    credited_holidays = 0
+    in_person_work_days = 0
+    pto_days = 0
+    company_holidays = 0
     
     for day in days:
         status = day.get('status', 'NONE')
         status_counts[status] = status_counts.get(status, 0) + 1
-        
-        if day['date'].weekday() < 5:  # Weekday
-            workdays += 1
-            
-            # Calculate daily credit using OR logic for weekdays
-            daily_credit = 0
-            
-            # Source 1: Status counts as office
-            if status in COUNTS_AS_OFFICE:
-                daily_credit = 1
-            
-            # Source 2: Credited holiday (OR logic - doesn't double count)
-            if day.get('is_holiday', False) and credited_holiday(day['date'], settings):
-                daily_credit = 1
-                if daily_credit:  # Only count if we're crediting this day
-                    credited_holidays += 1
-            
-            numerator += daily_credit
-        
-        else:  # Weekend
-            # For weekends: only count office-like statuses, no holiday credit
-            if status in COUNTS_AS_OFFICE:
-                numerator += 1
-    
-    # Denominator is total workdays only (Mon-Fri)
+
+        is_weekday = day['date'].weekday() < 5
+
+        # In-person and offsite work retain the existing weekend-credit
+        # behavior. PTO and company holidays only count on weekdays.
+        if status in IN_PERSON_WORK_STATUSES:
+            in_person_work_days += 1
+        elif is_weekday and status in PTO_STATUSES:
+            pto_days += 1
+        elif is_weekday and (
+            day.get('is_holiday', False)
+            or status in COMPANY_HOLIDAY_STATUSES
+        ):
+            company_holidays += 1
+
+    numerator = in_person_work_days + pto_days + company_holidays
     denominator = workdays
     
     # Calculate required days using specified rounding
@@ -168,7 +179,11 @@ def compute_summary(days: List[Dict[str, Any]], settings: Dict[str, Any]) -> Dic
         'balance': balance,
         'percent_achieved': percent_achieved,
         'status_counts': status_counts,
-        'credited_holidays': credited_holidays
+        'in_person_work_days': in_person_work_days,
+        'pto_days': pto_days,
+        'company_holidays': company_holidays,
+        # Retained for older export consumers.
+        'credited_holidays': company_holidays
     }
 
 
@@ -198,7 +213,7 @@ def serialize_month(days: List[Dict[str, Any]], settings: Dict[str, Any], summar
     
     # Create stable export format
     export_data = {
-        'version': '1.2',  # Increment version for OTHER_HOLIDAY support
+        'version': '1.3',  # Work-mode formula and explicit PTO categories
         'user_id': settings.get('user_id', 'rachel'),
         'month': {
             'year': days[0]['date'].year if days else None,
@@ -264,8 +279,12 @@ def get_status_color(status: str) -> str:
         'WFH': '#f5f5f5',
         'IN_OFFICE': '#e3f2fd',
         'VACATION': '#fff3e0',
+        'SICK': '#fff3e0',
+        'VOLUNTEER': '#fff3e0',
+        'OFFSITE_WORK': '#e3f2fd',
         'BIOHUB': '#e3f2fd',
         'TRAINING': '#e3f2fd',
+        'COMPANY_HOLIDAY': '#e3f2fd',
         'OTHER_HOLIDAY': '#e3f2fd'
     }
     return colors.get(status, '#ffffff')
@@ -278,16 +297,25 @@ def get_status_emoji(status: str) -> str:
         'WFH': '🏠',
         'IN_OFFICE': '🏢',
         'VACATION': '🏖️',
+        'SICK': '🤒',
+        'VOLUNTEER': '🤝',
+        'OFFSITE_WORK': '📍',
         'BIOHUB': '🏢',
         'TRAINING': '🏢',
+        'COMPANY_HOLIDAY': '🎉',
         'OTHER_HOLIDAY': '🏢'
     }
     return emojis.get(status, '')
 
 
 def get_next_status(current_status: str) -> str:
-    """Get next status in cycle: NONE → WFH → IN_OFFICE → VACATION → BIOHUB → TRAINING → OTHER_HOLIDAY → NONE."""
-    cycle = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
+    """Get the next selectable work mode."""
+    if current_status == 'OTHER_HOLIDAY':
+        current_status = 'COMPANY_HOLIDAY'
+    cycle = [
+        'NONE', 'WFH', 'IN_OFFICE', 'OFFSITE_WORK', 'VACATION', 'SICK',
+        'VOLUNTEER', 'BIOHUB', 'TRAINING', 'COMPANY_HOLIDAY'
+    ]
     try:
         current_index = cycle.index(current_status)
         return cycle[(current_index + 1) % len(cycle)]
