@@ -12,6 +12,7 @@ import calendar
 # Import our modules
 import db
 import calc
+from auth_helpers import build_signup_credentials, normalize_email, validate_signup
 from supabase import create_client
 
 def build_weeks(year: int, month: int):
@@ -42,8 +43,31 @@ def _display_name() -> str:
     e = st.session_state.get("email") or ""
     return (e.split("@")[0].title() if e else "there")
 
+
+def _remember_signed_in_user(sb, auth_response) -> None:
+    """Persist an authenticated Supabase user in the Streamlit session."""
+    user = getattr(auth_response, "user", None)
+    if user is None:
+        raise RuntimeError("Supabase did not return a user.")
+
+    st.session_state["uid"] = user.id
+    st.session_state["sb_client"] = sb
+
+    user_email = getattr(user, "email", None)
+    user_name = None
+    metadata = getattr(user, "user_metadata", None) or {}
+    if isinstance(metadata, dict):
+        user_name = metadata.get("full_name") or metadata.get("name")
+    if user_email and not user_name:
+        user_name = user_email.split("@")[0]
+    if user_email:
+        st.session_state["email"] = user_email
+    if user_name:
+        st.session_state["display_name"] = user_name
+
+
 def render_login():
-    st.title("Sign in")
+    st.title("Desk-O-Meter")
     st.markdown("Track in-person work against your monthly weekday requirement.")
     with st.expander("What is this?", expanded=False):
         st.markdown(
@@ -52,36 +76,99 @@ def render_login():
             "- **Weekends:** Don't increase the denominator, but **do** add credit when marked as in-person/offsite work.\n"
             "- **Privacy:** With RLS enabled, you only see your own data.\n"
         )
-    with st.form("login"):
-        email = st.text_input("Email", value="", autocomplete="username")
-        password = st.text_input("Password", type="password", autocomplete="current-password")
-        submitted = st.form_submit_button("Sign in")
-    if submitted:
-        sb = get_auth_client()
-        try:
-            res = sb.auth.sign_in_with_password({"email": email, "password": password})
-            # Persist identity for this session
-            st.session_state["uid"] = res.user.id
-            st.session_state["sb_client"] = sb
-            # Store display info for greeting
-            try:
-                user_email = getattr(res.user, "email", None)
-                user_name = None
-                meta = getattr(res.user, "user_metadata", None) or {}
-                if isinstance(meta, dict):
-                    user_name = meta.get("full_name") or meta.get("name")
-                if user_email and not user_name:
-                    user_name = user_email.split("@")[0]
-                if user_email:  st.session_state["email"] = user_email
-                if user_name:   st.session_state["display_name"] = user_name
-            except Exception:
-                pass
-            st.success("Signed in")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Login failed: {e}")
 
-# TODO(auth): Switch to Supabase Auth, enable RLS, add user_id from auth context
+    sign_in_tab, create_account_tab = st.tabs(["Sign in", "Create account"])
+
+    with sign_in_tab:
+        with st.form("login"):
+            email = st.text_input(
+                "Email",
+                value="",
+                autocomplete="username",
+                key="login_email",
+            )
+            password = st.text_input(
+                "Password",
+                type="password",
+                autocomplete="current-password",
+                key="login_password",
+            )
+            submitted = st.form_submit_button("Sign in", use_container_width=True)
+        if submitted:
+            sb = get_auth_client()
+            try:
+                response = sb.auth.sign_in_with_password(
+                    {
+                        "email": normalize_email(email),
+                        "password": password,
+                    }
+                )
+                _remember_signed_in_user(sb, response)
+                st.success("Signed in")
+                st.rerun()
+            except Exception as error:
+                st.error(f"Sign in failed: {error}")
+
+    with create_account_tab:
+        st.caption("Create your own private account. No invitation is required.")
+        with st.form("signup"):
+            display_name = st.text_input(
+                "Name (optional)",
+                autocomplete="name",
+                key="signup_name",
+            )
+            signup_email = st.text_input(
+                "Email",
+                autocomplete="email",
+                key="signup_email",
+            )
+            signup_password = st.text_input(
+                "Password",
+                type="password",
+                autocomplete="new-password",
+                key="signup_password",
+            )
+            password_confirmation = st.text_input(
+                "Confirm password",
+                type="password",
+                autocomplete="new-password",
+                key="signup_password_confirmation",
+            )
+            signup_submitted = st.form_submit_button(
+                "Create account",
+                use_container_width=True,
+            )
+
+        if signup_submitted:
+            validation_error = validate_signup(
+                signup_email,
+                signup_password,
+                password_confirmation,
+            )
+            if validation_error:
+                st.error(validation_error)
+            else:
+                sb = get_auth_client()
+                credentials = build_signup_credentials(
+                    signup_email,
+                    signup_password,
+                    display_name,
+                    db.get_secret("AUTH_REDIRECT_URL", ""),
+                )
+                try:
+                    response = sb.auth.sign_up(credentials)
+                    if getattr(response, "session", None):
+                        _remember_signed_in_user(sb, response)
+                        st.success("Account created. You're signed in.")
+                        st.rerun()
+                    else:
+                        st.success(
+                            "Account created. Check your email to confirm it, "
+                            "then return here and sign in."
+                        )
+                except Exception as error:
+                    st.error(f"Account creation failed: {error}")
+
 # TODO(device): Expose /api/month?year=YYYY&month=MM via FastAPI for ESP32 clients
 
 # Page configuration
