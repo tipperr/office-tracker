@@ -44,11 +44,12 @@ def _display_name() -> str:
 
 def render_login():
     st.title("Sign in")
-    st.markdown("Track in-office requirements (60% of weekdays), holidays, and weekend credits.")
+    st.markdown("Track in-person work against your monthly weekday requirement.")
     with st.expander("What is this?", expanded=False):
         st.markdown(
-            "- **Counts:** Tue–Thu holidays and any day you mark as Office/Biohub/Training/Vacation count toward your 60%.\n"
-            "- **Weekends:** Don't increase the denominator, but **do** add credit if marked as Office-like.\n"
+            "- **Formula:** In-person/offsite work + PTO + company holidays, divided by weekdays in the month.\n"
+            "- **PTO:** Vacation, sick, and volunteer days count toward the requirement.\n"
+            "- **Weekends:** Don't increase the denominator, but **do** add credit when marked as in-person/offsite work.\n"
             "- **Privacy:** With RLS enabled, you only see your own data.\n"
         )
     with st.form("login"):
@@ -106,6 +107,29 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 WEEKDAY_ABBR = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+STATUS_OPTIONS = [
+    'NONE', 'WFH', 'IN_OFFICE', 'OFFSITE_WORK', 'VACATION', 'SICK',
+    'VOLUNTEER', 'BIOHUB', 'TRAINING', 'COMPANY_HOLIDAY'
+]
+STATUS_LABELS = {
+    'NONE': '—',
+    'WFH': 'WFH',
+    'IN_OFFICE': 'Office',
+    'OFFSITE_WORK': 'Offsite Work',
+    'VACATION': 'Vacation',
+    'SICK': 'Sick',
+    'VOLUNTEER': 'Volunteer',
+    'BIOHUB': 'Biohub',
+    'TRAINING': 'Training',
+    'COMPANY_HOLIDAY': 'Company Holiday'
+}
+
+
+def status_for_selector(status: str) -> str:
+    """Map legacy stored statuses to the current selector value."""
+    if status == 'OTHER_HOLIDAY':
+        return 'COMPANY_HOLIDAY'
+    return status
 
 # Gate the app UI behind login
 if "uid" not in st.session_state:
@@ -275,30 +299,20 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
             """, unsafe_allow_html=True)
             
             # Status selector for weekends
-            status_options = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
-            status_labels = {
-                'NONE': '—',
-                'WFH': 'WFH',
-                'IN_OFFICE': 'Office',
-                'VACATION': 'Vacation',
-                'BIOHUB': 'Biohub',
-                'TRAINING': 'Training',
-                'OTHER_HOLIDAY': 'Other Hol'
-            }
-            
-            current_index = status_options.index(status) if status in status_options else 0
+            selected_status = status_for_selector(status)
+            current_index = STATUS_OPTIONS.index(selected_status) if selected_status in STATUS_OPTIONS else 0
             
             new_status = st.selectbox(
                 "",
-                options=status_options,
-                format_func=lambda x: status_labels.get(x, x),
+                options=STATUS_OPTIONS,
+                format_func=lambda x: STATUS_LABELS.get(x, x),
                 index=current_index,
                 key=f"status_{day_date.isoformat()}",
                 label_visibility="collapsed"
             )
             
             # Update status if changed
-            if new_status != status:
+            if new_status != selected_status:
                 db.upsert_day(None, day_date, {'status': new_status})
                 st.rerun()
         
@@ -313,21 +327,10 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
             """, unsafe_allow_html=True)
             
             # Still provide a selector for empty weekend cells
-            status_options = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
-            status_labels = {
-                'NONE': '—',
-                'WFH': 'WFH',
-                'IN_OFFICE': 'Office',
-                'VACATION': 'Vacation',
-                'BIOHUB': 'Biohub',
-                'TRAINING': 'Training',
-                'OTHER_HOLIDAY': 'Other Hol'
-            }
-            
             new_status = st.selectbox(
                 "",
-                options=status_options,
-                format_func=lambda x: status_labels.get(x, x),
+                options=STATUS_OPTIONS,
+                format_func=lambda x: STATUS_LABELS.get(x, x),
                 index=0,  # Default to NONE
                 key=f"status_{day_date.isoformat()}",
                 label_visibility="collapsed"
@@ -365,30 +368,20 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
         """, unsafe_allow_html=True)
         
         # Status selector inside the cell
-        status_options = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
-        status_labels = {
-            'NONE': '—',
-            'WFH': 'WFH',
-            'IN_OFFICE': 'Office',
-            'VACATION': 'Vacation',
-            'BIOHUB': 'Biohub',
-            'TRAINING': 'Training',
-            'OTHER_HOLIDAY': 'Other Hol'
-        }
-        
-        current_index = status_options.index(status) if status in status_options else 0
+        selected_status = status_for_selector(status)
+        current_index = STATUS_OPTIONS.index(selected_status) if selected_status in STATUS_OPTIONS else 0
         
         new_status = st.selectbox(
             "",
-            options=status_options,
-            format_func=lambda x: status_labels.get(x, x),
+            options=STATUS_OPTIONS,
+            format_func=lambda x: STATUS_LABELS.get(x, x),
             index=current_index,
             key=f"status_{day_date.isoformat()}",
             label_visibility="collapsed"
         )
         
         # Update status if changed
-        if new_status != status:
+        if new_status != selected_status:
             db.upsert_day(None, day_date, {'status': new_status})
             st.rerun()
     
@@ -402,21 +395,10 @@ def render_day_cell(day_date: date, day_data: Dict[str, Any], settings: Dict[str
         """, unsafe_allow_html=True)
         
         # Still provide a selector for empty cells
-        status_options = ['NONE', 'WFH', 'IN_OFFICE', 'VACATION', 'BIOHUB', 'TRAINING', 'OTHER_HOLIDAY']
-        status_labels = {
-            'NONE': '—',
-            'WFH': 'WFH',
-            'IN_OFFICE': 'Office',
-            'VACATION': 'Vacation',
-            'BIOHUB': 'Biohub',
-            'TRAINING': 'Training',
-            'OTHER_HOLIDAY': 'Other Hol'
-        }
-        
         new_status = st.selectbox(
             "",
-            options=status_options,
-            format_func=lambda x: status_labels.get(x, x),
+            options=STATUS_OPTIONS,
+            format_func=lambda x: STATUS_LABELS.get(x, x),
             index=0,  # Default to NONE
             key=f"status_{day_date.isoformat()}",
             label_visibility="collapsed"
@@ -453,10 +435,10 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     balance_delta_color = "normal" if balance == 0 else ("inverse" if balance > 0 else "off")
     st.sidebar.metric("Balance", balance, delta=balance_delta, delta_color=balance_delta_color)
     
-    # 3. Completed/Denominator (small lines)
+    # 3. Credited days / weekdays in month
     numerator = summary.get('numerator', 0)
     denominator = summary.get('denominator', 0)
-    st.sidebar.markdown(f"**Completed:** {numerator} / {denominator}")
+    st.sidebar.markdown(f"**Credited days:** {numerator} / {denominator}")
     
     # 4. Progress bar
     required_percent = settings.get('required_percent', 0.60) * 100
@@ -466,20 +448,21 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
     st.sidebar.markdown(f"**Achievement:** {achieved_percent:.1f}% of {required_percent:.0f}% required")
     
     # Weekend behavior helper text
-    st.sidebar.caption("💡 Weekends don't increase the denominator; marking an office status on a weekend does add credit.")
+    st.sidebar.caption(
+        "Formula: (in-person/offsite work + PTO + company holidays) ÷ weekdays in month. "
+        "A day is never counted twice."
+    )
     
     # Show breakdown of credits
     st.sidebar.markdown("---")
-    st.sidebar.markdown("**Credit Breakdown:**")
-    status_counts = summary.get('status_counts', {})
-    for status in ['IN_OFFICE', 'BIOHUB', 'TRAINING', 'VACATION', 'OTHER_HOLIDAY']:
-        count = status_counts.get(status, 0)
-        if count > 0:
-            st.sidebar.markdown(f"• {status.replace('_', ' ').title()}: {count}")
-    
-    credited_holidays = summary.get('credited_holidays', 0)
-    if credited_holidays > 0:
-        st.sidebar.markdown(f"• Credited Holidays: {credited_holidays}")
+    st.sidebar.markdown("**Formula Breakdown:**")
+    st.sidebar.markdown(
+        f"• In-person/offsite work: {summary.get('in_person_work_days', 0)}"
+    )
+    st.sidebar.markdown(f"• Paid time off: {summary.get('pto_days', 0)}")
+    st.sidebar.markdown(
+        f"• Company holidays: {summary.get('company_holidays', 0)}"
+    )
     
     # Configuration section
     st.sidebar.markdown("---")
@@ -526,36 +509,16 @@ def render_sidebar(settings: Dict[str, Any], summary: Dict[str, Any]):
         index=['ceil', 'floor', 'round_half_up'].index(settings.get('rounding_mode', 'ceil'))
     )
     
-    # Holiday treatment for Mon/Fri
-    new_monfri_treatment = st.sidebar.selectbox(
-        "Mon/Fri Holidays",
-        options=['neutral', 'exclude', 'credit'],
-        index=['neutral', 'exclude', 'credit'].index(settings.get('monfri_holiday_treatment', 'neutral'))
-    )
-    
-    # Credit weekdays
-    credit_options = ['MON', 'TUE', 'WED', 'THU', 'FRI']
-    current_credit_weekdays = settings.get('credit_weekdays', ['TUE', 'WED', 'THU'])
-    new_credit_weekdays = st.sidebar.multiselect(
-        "Credit Weekdays",
-        options=credit_options,
-        default=current_credit_weekdays
-    )
-    
     # Update settings if changed
     settings_changed = (
         new_required_percent != settings.get('required_percent', 0.60) or
-        new_rounding_mode != settings.get('rounding_mode', 'ceil') or
-        new_monfri_treatment != settings.get('monfri_holiday_treatment', 'neutral') or
-        set(new_credit_weekdays) != set(current_credit_weekdays)
+        new_rounding_mode != settings.get('rounding_mode', 'ceil')
     )
     
     if settings_changed:
         db.upsert_settings(db.get_current_user_id(), {
             'required_percent': new_required_percent,
-            'rounding_mode': new_rounding_mode,
-            'monfri_holiday_treatment': new_monfri_treatment,
-            'credit_weekdays': new_credit_weekdays
+            'rounding_mode': new_rounding_mode
         })
         st.rerun()
     
@@ -631,9 +594,13 @@ def status_to_class(status: str) -> str:
         'NONE': 'empty',
         'WFH': 'status-wfh',
         'IN_OFFICE': 'status-in_office',
+        'OFFSITE_WORK': 'status-offsite_work',
         'VACATION': 'status-vacation',
+        'SICK': 'status-sick',
+        'VOLUNTEER': 'status-volunteer',
         'BIOHUB': 'status-biohub',
         'TRAINING': 'status-training',
+        'COMPANY_HOLIDAY': 'status-company_holiday',
         'OTHER_HOLIDAY': 'status-other_holiday'
     }
     return status_map.get(status, 'empty')
@@ -671,11 +638,11 @@ def main():
         background: #f3f4f6;
     }
     
-    .status-in_office, .status-biohub, .status-training, .status-other_holiday {
+    .status-in_office, .status-offsite_work, .status-biohub, .status-training, .status-company_holiday, .status-other_holiday {
         background: #e6f4ea;
     }
     
-    .status-vacation {
+    .status-vacation, .status-sick, .status-volunteer {
         background: #fff7cc;
     }
     
@@ -784,10 +751,11 @@ def main():
     st.markdown("---")
     st.markdown("""
     **Instructions:**
-    - Use dropdown in each weekday cell to select status: —, WFH, Office, Vacation, Biohub, Training, Other Hol
+    - Use each day's dropdown to select WFH, Office, Offsite Work, Vacation, Sick, Volunteer, Biohub, Training, or Company Holiday
     - Holidays are automatically detected and marked with 🎉
-    - **New Logic**: VACATION, BIOHUB, TRAINING, and OTHER_HOLIDAY now count as office attendance
-    - Denominator = total workdays (no vacation subtraction)
+    - **Formula:** (In-person/offsite work + PTO + company holidays) ÷ weekdays in the month
+    - PTO includes vacation, sick, and volunteer days
+    - Each date contributes at most one credit
     - Use the sidebar to adjust settings and view detailed progress breakdown
     - Export/import JSON data for backup or sharing
     """)

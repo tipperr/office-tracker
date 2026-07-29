@@ -1,14 +1,14 @@
 # Office Tracker
 
-A clean, minimal Streamlit web app for tracking office attendance with configurable requirements and holiday handling. Built with Python 3.11 and Supabase for data persistence.
+A clean, minimal Streamlit web app for tracking in-person work with configurable requirements. Built with Python 3.11 and Supabase for data persistence.
 
 ## Features
 
 - **Monthly Calendar View**: Interactive calendar showing weekdays with status tracking
-- **Status Cycling**: Click cells to cycle through None → Office → WFH → Vacation
-- **Holiday Detection**: Automatic holiday detection with configurable credit rules
+- **Work Modes**: Track office, offsite work, WFH, vacation, sick, volunteer, training, and company holidays
+- **Holiday Detection**: Automatically credit detected company holidays
 - **Flexible Requirements**: Configurable percentage requirements with multiple rounding modes
-- **Progress Tracking**: Real-time progress bar and balance calculation
+- **Progress Tracking**: Real-time formula breakdown, progress bar, and balance calculation
 - **Vacation Helper**: Bulk set vacation ranges across dates
 - **Export/Import**: JSON export/import for data backup and sharing
 - **Month Navigation**: Easy navigation between months with ◀ ▶ arrows
@@ -90,35 +90,24 @@ The app will open in your browser at `http://localhost:8501`.
 - **Required %**: Percentage of eligible days that must be in office (default: 60%)
 - **Rounding**: How to round required days calculation (ceil/floor/round_half_up)
 
-### Holiday Handling
-- **Credit Weekdays**: Which weekdays get credited when they're holidays (default: Tue/Wed/Thu)
-- **Mon/Fri Holidays**: How to treat Monday/Friday holidays:
-  - `neutral`: No effect on calculation
-  - `exclude`: Remove from denominator
-  - `credit`: Add to numerator
-
 ### Regions
-- **Country**: Holiday calendar country (default: UnitedStates)
-- **State**: Optional state for state-specific holidays
+- **Country**: Holiday calendar country used for automatic company-holiday detection (default: UnitedStates)
+- **State**: Optional state for state-specific company holidays
 - **Timezone**: Timezone for date calculations
 
 ## Business Logic
 
 ### Calculation Rules
 
-1. **Workdays** = All Monday-Friday in the month
-2. **Denominator** = Workdays - Vacation days - (excluded holidays if Mon/Fri treatment = exclude)
-3. **Numerator** = In Office days + Credited holidays
-4. **Required Days** = rounding(required% × denominator)
-5. **Balance** = Numerator - Required Days (positive = banked days, negative = owed days)
+1. **In-Person Work Days** = Onsite days (`IN_OFFICE`) + offsite work days (`OFFSITE_WORK`, `BIOHUB`, `TRAINING`)
+2. **Paid Time Off Days** = Vacation + sick + volunteer days
+3. **Company Holidays** = Automatically detected weekday holidays + manually selected company holidays
+4. **Weekdays in Month** = All Monday-Friday dates in the calendar month
+5. **In-Person Work %** = (In-Person Work Days + Paid Time Off Days + Company Holidays) / Weekdays in Month
+6. **Required Days** = rounding(required% × Weekdays in Month)
+7. **Balance** = Credited Days - Required Days (positive = banked days, negative = owed days)
 
-### Holiday Credit Rules
-
-- Holidays on credited weekdays (Tue/Wed/Thu by default) are automatically credited
-- Monday/Friday holidays follow the Mon/Fri treatment setting:
-  - `neutral`: No effect
-  - `exclude`: Removed from denominator (makes requirement easier)
-  - `credit`: Added to numerator (counts as office day)
+Each calendar date contributes at most one credited day. For example, vacation taken on a detected company holiday is not double-counted. Weekend in-person/offsite work retains the app's existing extra-credit behavior, but weekends never increase the denominator.
 
 ## File Structure
 
